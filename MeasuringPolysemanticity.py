@@ -4,6 +4,25 @@ from captum.attr import IntegratedGradients
 from scipy.stats import entropy
 
 def get_neuron_gradients(features, encoding_model, specimen_model, layer_types=[torch.nn.Linear]):
+    """
+    Calculate gradients of neurons with respect to input features for linear models.
+
+    This function computes the gradients of each neuron's activation with respect to each input feature for the given encoding and specimen model. 
+    It uses a linear approach suitable for models without non-linearities between layers.
+
+    Args:
+        features (int): Number of input features.
+        encoding_model (torch.nn.Module): The encoding model.
+        specimen_model (torch.nn.Module): The observed model.
+        layer_types (list): Types of layers to consider for activation extraction. Default is [torch.nn.Linear].
+
+    Returns:
+        numpy.ndarray: A 2D array of shape (total_neurons, features) containing the gradients.
+
+    Note:
+        This function assumes a linear relationship between layers and may not be suitable for models with non-linear activations between layers.
+    """
+
     def get_all_activations(model, input_tensor):
         activations = []
         def hook(module, input, output):
@@ -50,6 +69,24 @@ def get_neuron_gradients(features, encoding_model, specimen_model, layer_types=[
     return neuron_gradients
 
 def get_nlin_neuron_gradients(features, encoding_model, specimen_model, layer_types=[torch.nn.Linear]):
+    """
+    Calculate gradients of neurons with respect to input features for non-linear models.
+
+    This function computes the gradients of each neuron's activation with respect to each input feature for the given encoding and specimen model. 
+    It uses Integrated Gradients, which is suitable for models with non-linearities between layers.
+
+    Args:
+        features (int): Number of input features.
+        encoding_model (torch.nn.Module): The encoding model.
+        specimen_model (torch.nn.Module): The observed model.
+        layer_types (list): Types of layers to consider for activation extraction. Default is [torch.nn.Linear].
+
+    Returns:
+        numpy.ndarray: A 2D array of shape (total_neurons, features) containing the gradients.
+
+    Note:
+        This function uses Integrated Gradients and is suitable for models with non-linear activations between layers.
+    """
     def get_all_activations(model, input_tensor):
         activations = []
         def hook(module, input, output):
@@ -104,6 +141,18 @@ def get_nlin_neuron_gradients(features, encoding_model, specimen_model, layer_ty
     return gradients.detach().numpy()
 
 def measure_relative_polysemanticity(neuron_gradients):
+    """
+    Calculate polysemanticity for each neuron based on its gradients.
+
+    This function measures the polysemanticity of each neuron by comparing the sum of absolute gradients to the maximum absolute gradient. 
+    A higher value indicates higher polysemanticity. This option was used for the experiments of this thesis.
+
+    Args:
+        neuron_gradients (numpy.ndarray): A 2D array of shape (total_neurons, features) containing the gradients of each neuron with respect to input features.
+
+    Returns:
+        numpy.ndarray: A 1D array containing the polysemanticity measure for each neuron.
+    """
     polysemanticity = []
     for gradient in neuron_gradients:
         total_gradient = np.sum(np.abs(gradient))  # Sum of non-negative gradients
@@ -116,6 +165,18 @@ def measure_relative_polysemanticity(neuron_gradients):
     return np.array(polysemanticity)
 
 def measure_entropy_polysemanticity(neuron_gradients):
+    """
+    Calculate entropy-based polysemanticity for each neuron based on its gradients.
+
+    This function measures the polysemanticity of each neuron using the entropy of its normalized absolute gradients. 
+    The resulting values are then normalized to a [0, 1] range.
+
+    Args:
+        neuron_gradients (numpy.ndarray): A 2D array of shape (total_neurons, features) containing the gradients of each neuron with respect to input features.
+
+    Returns:
+        numpy.ndarray: A 1D array containing the normalized entropy-based polysemanticity measure for each neuron.
+    """
     polysemanticity = []
 
     for gradient in neuron_gradients:

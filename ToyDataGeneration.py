@@ -4,6 +4,18 @@ import torch.optim as optim
 import numpy as np
 
 class FeatureModel(nn.Module):
+    """
+    A Feature Model that describes an ideal mathematical model of the ground truth, mapping features to their corresponding desired output and describing interdependencies between features through a hierarchical structure.
+
+    Args:
+        num_features (int): Total number of features in the model.
+        output_dim (int): Dimension of the output layer.
+        input_dim (int): Dimension of the input layer. If 0, it's randomly generated.
+        min_neurons (int): Minimum number of neurons per hidden layer.
+        max_neurons (int): Maximum number of neurons per hidden layer.
+        linear (bool): If True, uses linear activation for all layers, and a ReLU activation otherwise. Defaults to True.
+        layer_dims (list): Predefined layer dimensions. If None, they are randomly generated.
+    """
     def __init__(self, num_features, output_dim, input_dim=0, min_neurons=5, max_neurons=100, linear=True, layer_dims=None):
         super(FeatureModel, self).__init__()
         self.num_features = num_features
@@ -28,6 +40,19 @@ class FeatureModel(nn.Module):
         self.model = nn.Sequential(*layers)
 
     def _generate_random_layers(self, min_neurons, max_neurons):
+        """
+        Generates random layer dimensions for the Feature Model.
+
+        The algorithm iteratively adds layers with a random number of neurons within a range defined by lower and upper bounds. 
+        The number of neurons per layer generally decreases as we move towards the output layer.
+
+        Args:
+            min_neurons (int): Minimum number of neurons per hidden layer.
+            max_neurons (int): Maximum number of neurons per hidden layer.
+
+        Returns:
+            list: A list of integers representing the number of neurons in each layer.
+        """
         layer_dims = [self.input_dim]
         remaining_features = self.num_features
         lower_bound = (min_neurons+max_neurons) // 2
@@ -57,6 +82,15 @@ class FeatureModel(nn.Module):
         return layer_dims
 
     def forward(self, x):
+        """
+        Defines the forward pass of the Feature Model.
+
+        Args:
+            x (torch.Tensor): Input tensor.
+
+        Returns:
+            list: A list of activations for each layer, including the input.
+        """
         activations = []
         activations.append(x) # View input as activation
         for layer in self.model:
@@ -66,12 +100,30 @@ class FeatureModel(nn.Module):
         return activations
 
     def get_output(self, activations):
+        """
+        Retrieves the output of the model from the activations.
+
+        Args:
+            activations (list): List of activations for each layer.
+
+        Returns:
+            torch.Tensor: The output of the model (last layer's activation).
+        """
         return activations[-1]
 
     def get_dims(self):
         return self.layer_dims
 
     def get_feature_activations(self, activations):
+        """
+        Extracts the feature activations from the hidden layers.
+
+        Args:
+            activations (list): List of activations for each layer.
+
+        Returns:
+            torch.Tensor: Concatenated tensor of feature activations from hidden layers.
+        """
         selected_activations = []
         for layer_activations in activations[1:-1]:
             if layer_activations.dim() == 1:
@@ -81,6 +133,21 @@ class FeatureModel(nn.Module):
         return torch.cat(selected_activations)
 
     def get_seed(self, target_features, steps=1000, lr=0.01):
+        """
+        Calculates an approximate input vector (seed) that results in neuron activations close to the given target feature coefficient vector.
+
+        The method uses the Adam optimizer to minimize the MSE loss between the activations and the target vector, starting from a random input vector.
+
+        Args:
+            target_features (list or numpy.ndarray): Target feature coefficient vector.
+            steps (int): Number of optimization steps. Defaults to 1000.
+            lr (float): Learning rate for the optimizer. Defaults to 0.01.
+
+        Returns:
+            tuple: A tuple containing:
+                - numpy.ndarray: The calculated seed vector.
+                - bool: True if the result is approximate, False if exact.
+        """
         input_dim = self.layer_dims[0]
         input_vector = torch.randn(input_dim, requires_grad=True)  # Start with a random input vector
 
@@ -105,7 +172,22 @@ class FeatureModel(nn.Module):
 
 
 class ToyDataGenerator:
-    def __init__(self, features, sparsity, input_dim, output_dim, importance=None, importance_bound=0.1, min_layers=2, min_neurons=5, max_neurons=256, linear=True, layer_dims=None):
+    """
+    A class for generating toy data using a Feature Model and an autoencoder, as described in the thesis.
+
+    Args:
+        features (int): Number of features in the toy data.
+        sparsity (list): List of sparsity values for each feature defining how commonly the given features are present in toy data samples.
+        input_dim (int): Dimension of the input vectors in the toy data.
+        output_dim (int): Dimension of the output vectors in the toy data.
+        importance (function): Function to generate importance values for weight initialization (which as a result defines the importance of the features on succeeding layers in the FeatureModel).
+        importance_bound (float): Threshold for the importance function (weights below this value will be set to 0).
+        min_neurons (int): Minimum number of neurons per hidden layer in the FeatureModel.
+        max_neurons (int): Maximum number of neurons per hidden layer in the FeatureModel.
+        linear (bool): Whether to use linear or non-linear activation in the autoencoder and FeatureModel.
+        layer_dims (list): Predefined layer dimensions of the FeatureModel. If None, they are randomly generated.
+    """
+    def __init__(self, features, sparsity, input_dim, output_dim, importance=None, importance_bound=0.1, min_neurons=5, max_neurons=256, linear=True, layer_dims=None):
         self.features = features
         self.sparsity = sparsity
         self.input_dim = input_dim
@@ -157,6 +239,20 @@ class ToyDataGenerator:
             return self.model.get_output((self.model(x)))
 
     def gen_toy_data(self, num_samples):
+        """
+        Generates the given number of samples of toy data consisting of input-output pairs with the already defined FeatureModel. 
+        For that, random feature coefficient vectors will be generated based on the sparsity list and an autoencoder will be trained on these vectors.
+        Encoding these feature coefficient vectors results in the input of the toy data samples.
+        The corresponding output for the feature coefficient vector is calculated with the FeatureModel.
+
+        Args:
+            num_samples (int): Number of toy data samples to generate
+
+        Returns:
+            tuple:
+                - X (np.ndarray): Numpy array containing the input data of the toy data samples.
+                - Y (np.ndarray): Numpy array containing the output data of the toy data samples.
+        """
         features = np.zeros((num_samples, self.features))
         for i in range(self.features):
             features[:, i] = np.where(np.random.rand(num_samples) < self.sparsity[i], 0, np.random.rand(num_samples))
@@ -178,6 +274,23 @@ class ToyDataGenerator:
         return X.numpy(), Y.numpy()
 
     def gen_autoencoder(self, sample_features, num_epochs = 100, batch_size = 32):
+        """
+    Generates and trains an autoencoder model using the provided sample features.
+
+    The autoencoder consists of an encoder and a decoder. 
+    The encoder compresses the input features into a lower-dimensional encoded representation, and the decoder reconstructs the input from the encoded representation.
+
+    -> The `linear` attribute of the ToyDataGenerator class determines whether ReLU activations are used in the encoder and decoder.
+
+    Args:
+        sample_features (torch.Tensor): A tensor containing the feature samples to train the autoencoder. 
+                                        Each row represents a sample, and each column represents a feature.
+        num_epochs (int, optional): Number of epochs for training the autoencoder. Defaults to 100.
+        batch_size (int, optional): Batch size used for training. Defaults to 32.
+
+    Returns:
+        Autoencoder: A trained autoencoder model.
+    """
         class Autoencoder(nn.Module):
             def __init__(self, feature_dim, encoded_dim, linear=True):
                 super(Autoencoder, self).__init__()
